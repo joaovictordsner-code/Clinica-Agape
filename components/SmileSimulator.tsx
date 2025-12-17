@@ -76,8 +76,13 @@ const SmileSimulator: React.FC = () => {
       // Tenta recuperar a chave de API de todas as formas possíveis.
       // Na Vercel (Vite), variáveis públicas DEVEM começar com VITE_
       // @ts-ignore
-      const apiKey = (import.meta.env && import.meta.env.VITE_API_KEY) || (window.process && window.process.env && window.process.env.API_KEY) || process.env.API_KEY;
+      let apiKey = (import.meta.env && import.meta.env.VITE_API_KEY) || (window.process && window.process.env && window.process.env.API_KEY) || process.env.API_KEY;
       
+      // Limpeza de segurança: remove espaços e aspas se o usuário tiver colado errado
+      if (apiKey) {
+        apiKey = apiKey.trim().replace(/^["']|["']$/g, '');
+      }
+
       if (!apiKey) {
         console.error("API Key is missing. Make sure VITE_API_KEY is set in Vercel Environment Variables.");
         throw new Error("Chave de API não configurada. Adicione 'VITE_API_KEY' nas configurações da Vercel.");
