@@ -63,7 +63,6 @@ const SmileSimulator: React.FC = () => {
 
     try {
       // Dynamic import to prevent crash on load if library is missing or fails
-      // Using a try-catch block for the import itself to be extra safe
       let GoogleGenAI;
       try {
         // @ts-ignore
@@ -74,12 +73,14 @@ const SmileSimulator: React.FC = () => {
         throw new Error("Erro ao carregar módulo de IA. Verifique sua conexão.");
       }
 
-      // Check for API key in various locations (Vite env or standard env)
+      // Tenta recuperar a chave de API de todas as formas possíveis.
+      // Na Vercel (Vite), variáveis públicas DEVEM começar com VITE_
       // @ts-ignore
-      const apiKey = process.env.API_KEY || (import.meta.env && import.meta.env.VITE_API_KEY);
+      const apiKey = (import.meta.env && import.meta.env.VITE_API_KEY) || (window.process && window.process.env && window.process.env.API_KEY) || process.env.API_KEY;
       
       if (!apiKey) {
-        throw new Error("API Key não configurada. Configure a variável API_KEY ou VITE_API_KEY.");
+        console.error("API Key is missing. Make sure VITE_API_KEY is set in Vercel Environment Variables.");
+        throw new Error("Chave de API não configurada. Adicione 'VITE_API_KEY' nas configurações da Vercel.");
       }
 
       const ai = new GoogleGenAI({ apiKey });
@@ -141,9 +142,16 @@ const SmileSimulator: React.FC = () => {
     } catch (err: any) {
       console.error(err);
       let errorMsg = "Ocorreu um erro ao conectar com a IA. Tente novamente.";
-      if (err.message && (err.message.includes("API Key") || err.message.includes("configured"))) {
-        errorMsg = "Erro de configuração da API. Contate o administrador.";
+      
+      // Mensagens de erro mais amigáveis
+      if (err.message && (err.message.includes("API Key") || err.message.includes("VITE_API_KEY"))) {
+        errorMsg = "Configuração pendente: Adicione a VITE_API_KEY no painel da Vercel.";
+      } else if (err.message && err.message.includes("fetch")) {
+        errorMsg = "Erro de conexão. Verifique sua internet.";
+      } else if (err.message && err.message.includes("SAFETY")) {
+        errorMsg = "A imagem foi bloqueada pelos filtros de segurança. Tente outra foto.";
       }
+      
       setError(errorMsg);
     } finally {
       setLoading(false);
