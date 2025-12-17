@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { Upload, Sparkles, Loader2, Image as ImageIcon, AlertCircle, Wand2 } from 'lucide-react';
+import { Upload, Sparkles, Loader2, Image as ImageIcon, AlertCircle, Wand2, Clock } from 'lucide-react';
 
 const SmileSimulator: React.FC = () => {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -7,6 +7,7 @@ const SmileSimulator: React.FC = () => {
   const [prompt, setPrompt] = useState('');
   const [resultImage, setResultImage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [loadingText, setLoadingText] = useState("Processando...");
   const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -41,18 +42,57 @@ const SmileSimulator: React.FC = () => {
   const handleQuickPrompt = (type: 'whitening' | 'veneers' | 'correction') => {
     switch(type) {
       case 'whitening':
-        // Opção 2: Clareamento
         setPrompt("Realize um clareamento dental profissional nesta imagem. Remova o amarelado dos dentes, deixando-os com uma tonalidade B1 (branco natural brilhante). Mantenha o realismo, reflexos de saliva e sombras naturais entre os dentes. Não altere o formato dos dentes, apenas a cor.");
         break;
       case 'veneers':
-        // Opção 3: Lentes de Contato
         setPrompt("Simule a aplicação de lentes de contato dentais em cerâmica nesta pessoa. Aumente ligeiramente o volume dos dentes para preencher o corredor bucal, corrija a simetria e deixe o sorriso mais harmônico e branco. Mantenha o aspecto realista e vítreo da cerâmica.");
         break;
       case 'correction':
-        // Variação para correções leves
         setPrompt("Corrija leves desalinhamentos e imperfeições nas bordas dos dentes mantendo a naturalidade.");
         break;
     }
+  };
+
+  const callGeminiAPI = async (apiKey: string, base64Data: string, finalPrompt: string, mimeType: string) => {
+    // Dynamic import
+    let GoogleGenAI;
+    try {
+      // @ts-ignore
+      const module = await import("@google/genai");
+      GoogleGenAI = module.GoogleGenAI;
+    } catch (importError: any) {
+      throw new Error(`Erro de Importação: ${importError.message || importError}`);
+    }
+
+    const ai = new GoogleGenAI({ apiKey });
+    
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash-image',
+      contents: {
+        parts: [
+          {
+            inlineData: {
+              data: base64Data,
+              mimeType: mimeType,
+            },
+          },
+          {
+            text: finalPrompt
+          },
+        ],
+      },
+    });
+
+    if (response.candidates?.[0]?.content?.parts) {
+      for (const part of response.candidates[0].content.parts) {
+        if (part.inlineData) {
+          const base64EncodeString = part.inlineData.data;
+          return `data:image/png;base64,${base64EncodeString}`;
+        }
+      }
+    }
+    
+    throw new Error("A IA respondeu mas não gerou a imagem.");
   };
 
   const handleGenerate = async () => {
@@ -60,105 +100,80 @@ const SmileSimulator: React.FC = () => {
 
     setLoading(true);
     setError(null);
+    setLoadingText("Iniciando a mágica...");
 
     try {
-      // Dynamic import to prevent crash on load if library is missing or fails
-      let GoogleGenAI;
-      try {
-        // @ts-ignore
-        const module = await import("@google/genai");
-        GoogleGenAI = module.GoogleGenAI;
-      } catch (importError: any) {
-        console.error("Failed to import @google/genai", importError);
-        throw new Error(`Erro de Importação: ${importError.message || importError}`);
-      }
-
-      // Tenta recuperar a chave de API de todas as formas possíveis.
-      // Na Vercel (Vite), variáveis públicas DEVEM começar com VITE_
       // @ts-ignore
       let apiKey = (import.meta.env && import.meta.env.VITE_API_KEY) || (window.process && window.process.env && window.process.env.API_KEY) || process.env.API_KEY;
       
-      // Limpeza de segurança: remove espaços e aspas se o usuário tiver colado errado
-      if (apiKey) {
-        apiKey = apiKey.trim().replace(/^["']|["']$/g, '');
-      }
+      if (apiKey) apiKey = apiKey.trim().replace(/^["']|["']$/g, '');
 
       if (!apiKey) {
         throw new Error("CHAVE_FALTANDO: A variável VITE_API_KEY não foi encontrada.");
       }
 
-      const ai = new GoogleGenAI({ apiKey });
       const base64Data = await fileToBase64(selectedFile);
       
-      // Opção 1: O "Prompt Mestre" (Recomendado)
       const systemContext = `
         Atue como um especialista em Odontologia Estética. Edite esta imagem para simular um tratamento de 'Sorriso de Hollywood' natural.
-        
         DIRETRIZES TÉCNICAS OBRIGATÓRIAS:
-        1. Realize um clareamento dental mantendo a textura e brilho naturais (evite branco fosco/papel).
+        1. Realize um clareamento dental mantendo a textura e brilho naturais.
         2. Corrija leves desalinhamentos e imperfeições nas bordas dos dentes.
         3. Mantenha a gengiva com cor saudável e natural.
-        4. É CRUCIAL preservar a identidade da pessoa, o formato dos lábios e a iluminação original da foto. Mexa APENAS nos dentes.
+        4. É CRUCIAL preservar a identidade da pessoa. Mexa APENAS nos dentes.
       `;
 
-      // Combinação do Prompt Mestre com o pedido do usuário
-      const finalPrompt = `${systemContext}
-      
-      INSTRUÇÃO ESPECÍFICA DO PACIENTE:
-      ${prompt}
-      
-      Retorne APENAS a imagem editada.`;
+      const finalPrompt = `${systemContext}\nINSTRUÇÃO ESPECÍFICA DO PACIENTE:\n${prompt}\nRetorne APENAS a imagem editada.`;
 
-      const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash-image',
-        contents: {
-          parts: [
-            {
-              inlineData: {
-                data: base64Data,
-                mimeType: selectedFile.type,
-              },
-            },
-            {
-              text: finalPrompt
-            },
-          ],
-        },
-      });
+      // LOGICA DE RETRY (TENTATIVA E ERRO)
+      let success = false;
+      let attempt = 1;
+      const maxRetries = 2; // Tenta 2 vezes no total (1 normal + 1 após espera)
 
-      let foundImage = false;
-      if (response.candidates?.[0]?.content?.parts) {
-        for (const part of response.candidates[0].content.parts) {
-          if (part.inlineData) {
-            const base64EncodeString = part.inlineData.data;
-            const imageUrl = `data:image/png;base64,${base64EncodeString}`;
-            setResultImage(imageUrl);
-            foundImage = true;
-            break;
+      while (!success && attempt <= maxRetries) {
+        try {
+          if (attempt > 1) {
+            setLoadingText("Tentando novamente...");
+          }
+          
+          const imageUrl = await callGeminiAPI(apiKey, base64Data, finalPrompt, selectedFile.type);
+          setResultImage(imageUrl);
+          success = true;
+        } catch (err: any) {
+          const errorMessage = err.message || JSON.stringify(err);
+          // Verifica se é erro de cota (429 ou RESOURCE_EXHAUSTED)
+          const isRateLimit = errorMessage.includes('429') || errorMessage.includes('RESOURCE_EXHAUSTED') || errorMessage.includes('Quota exceeded');
+
+          if (isRateLimit && attempt < maxRetries) {
+            // Se for erro de cota e ainda tivermos tentativas
+            console.log("Limite atingido. Iniciando espera...");
+            
+            // CONTAGEM REGRESSIVA VISUAL DE 60 SEGUNDOS
+            let seconds = 60;
+            while (seconds > 0) {
+              setLoadingText(`Alta demanda. Finalizando em ${seconds}s...`);
+              await new Promise(resolve => setTimeout(resolve, 1000));
+              seconds--;
+            }
+            
+            attempt++;
+          } else {
+            // Se for outro erro ou já tentamos demais
+            throw err;
           }
         }
       }
 
-      if (!foundImage) {
-        // Se chegou aqui, a IA respondeu mas não mandou imagem. Vamos ver o texto.
-        const textResponse = response.candidates?.[0]?.content?.parts?.[0]?.text;
-        throw new Error(`IA_SEM_IMAGEM: A IA respondeu, mas não gerou imagem. Resposta: ${textResponse?.substring(0, 100)}...`);
-      }
-
     } catch (err: any) {
       console.error(err);
-      // MODO DEBUG: Mostra o erro cru para o usuário copiar
       const rawMessage = err instanceof Error ? err.message : JSON.stringify(err);
       
-      // Tenta extrair detalhes de erro da API do Google se existirem
-      let detailedError = rawMessage;
-      if (err.response) {
-         try {
-             detailedError += ` | Status: ${err.response.status} ${err.response.statusText}`;
-         } catch (e) {}
+      // Mensagem amigável se falhar mesmo depois de esperar
+      if (rawMessage.includes('429') || rawMessage.includes('RESOURCE_EXHAUSTED')) {
+         setError("O sistema está com altíssima demanda agora. Por favor, aguarde 2 minutos e tente novamente.");
+      } else {
+         setError(`Não foi possível gerar a simulação no momento. Tente uma foto diferente ou mais clara.`);
       }
-
-      setError(`ERRO TÉCNICO (Mande print): ${detailedError}`);
     } finally {
       setLoading(false);
     }
@@ -270,8 +285,14 @@ const SmileSimulator: React.FC = () => {
                 >
                   {loading ? (
                     <>
-                      <Loader2 size={24} className="animate-spin" />
-                      Processando...
+                      {loadingText.includes("s...") ? (
+                        <Clock size={24} className="animate-pulse text-yellow-300" />
+                      ) : (
+                        <Loader2 size={24} className="animate-spin" />
+                      )}
+                      <span className={loadingText.includes("s...") ? "text-yellow-100" : ""}>
+                        {loadingText}
+                      </span>
                     </>
                   ) : (
                     <>
@@ -284,7 +305,7 @@ const SmileSimulator: React.FC = () => {
                   <div className="mt-3 p-3 bg-red-900/50 border border-red-500 rounded-lg flex flex-col gap-1 text-red-200 text-xs break-words">
                     <div className="flex items-center gap-2 font-bold text-red-100">
                       <AlertCircle size={16} />
-                      <span>Erro Detectado:</span>
+                      <span>Atenção:</span>
                     </div>
                     {error}
                   </div>
