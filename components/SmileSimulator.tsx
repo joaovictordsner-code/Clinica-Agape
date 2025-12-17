@@ -68,9 +68,9 @@ const SmileSimulator: React.FC = () => {
         // @ts-ignore
         const module = await import("@google/genai");
         GoogleGenAI = module.GoogleGenAI;
-      } catch (importError) {
+      } catch (importError: any) {
         console.error("Failed to import @google/genai", importError);
-        throw new Error("Erro ao carregar módulo de IA. Verifique sua conexão.");
+        throw new Error(`Erro de Importação: ${importError.message || importError}`);
       }
 
       // Tenta recuperar a chave de API de todas as formas possíveis.
@@ -84,8 +84,7 @@ const SmileSimulator: React.FC = () => {
       }
 
       if (!apiKey) {
-        console.error("API Key is missing. Make sure VITE_API_KEY is set in Vercel Environment Variables.");
-        throw new Error("Chave de API não configurada. Adicione 'VITE_API_KEY' nas configurações da Vercel.");
+        throw new Error("CHAVE_FALTANDO: A variável VITE_API_KEY não foi encontrada.");
       }
 
       const ai = new GoogleGenAI({ apiKey });
@@ -141,23 +140,25 @@ const SmileSimulator: React.FC = () => {
       }
 
       if (!foundImage) {
-        setError("Não foi possível gerar a simulação. A IA não retornou uma imagem válida.");
+        // Se chegou aqui, a IA respondeu mas não mandou imagem. Vamos ver o texto.
+        const textResponse = response.candidates?.[0]?.content?.parts?.[0]?.text;
+        throw new Error(`IA_SEM_IMAGEM: A IA respondeu, mas não gerou imagem. Resposta: ${textResponse?.substring(0, 100)}...`);
       }
 
     } catch (err: any) {
       console.error(err);
-      let errorMsg = "Ocorreu um erro ao conectar com a IA. Tente novamente.";
+      // MODO DEBUG: Mostra o erro cru para o usuário copiar
+      const rawMessage = err instanceof Error ? err.message : JSON.stringify(err);
       
-      // Mensagens de erro mais amigáveis
-      if (err.message && (err.message.includes("API Key") || err.message.includes("VITE_API_KEY"))) {
-        errorMsg = "Configuração pendente: Adicione a VITE_API_KEY no painel da Vercel.";
-      } else if (err.message && err.message.includes("fetch")) {
-        errorMsg = "Erro de conexão. Verifique sua internet.";
-      } else if (err.message && err.message.includes("SAFETY")) {
-        errorMsg = "A imagem foi bloqueada pelos filtros de segurança. Tente outra foto.";
+      // Tenta extrair detalhes de erro da API do Google se existirem
+      let detailedError = rawMessage;
+      if (err.response) {
+         try {
+             detailedError += ` | Status: ${err.response.status} ${err.response.statusText}`;
+         } catch (e) {}
       }
-      
-      setError(errorMsg);
+
+      setError(`ERRO TÉCNICO (Mande print): ${detailedError}`);
     } finally {
       setLoading(false);
     }
@@ -280,8 +281,11 @@ const SmileSimulator: React.FC = () => {
                   )}
                 </button>
                 {error && (
-                  <div className="mt-3 p-3 bg-red-900/30 border border-red-800 rounded-lg flex items-start gap-2 text-red-200 text-sm">
-                    <AlertCircle size={16} className="shrink-0 mt-0.5" />
+                  <div className="mt-3 p-3 bg-red-900/50 border border-red-500 rounded-lg flex flex-col gap-1 text-red-200 text-xs break-words">
+                    <div className="flex items-center gap-2 font-bold text-red-100">
+                      <AlertCircle size={16} />
+                      <span>Erro Detectado:</span>
+                    </div>
                     {error}
                   </div>
                 )}
