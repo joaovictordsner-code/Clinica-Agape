@@ -63,12 +63,23 @@ const SmileSimulator: React.FC = () => {
 
     try {
       // Dynamic import to prevent crash on load if library is missing or fails
-      // @ts-ignore
-      const { GoogleGenAI } = await import("@google/genai");
+      // Using a try-catch block for the import itself to be extra safe
+      let GoogleGenAI;
+      try {
+        // @ts-ignore
+        const module = await import("@google/genai");
+        GoogleGenAI = module.GoogleGenAI;
+      } catch (importError) {
+        console.error("Failed to import @google/genai", importError);
+        throw new Error("Erro ao carregar módulo de IA. Verifique sua conexão.");
+      }
 
-      const apiKey = process.env.API_KEY;
+      // Check for API key in various locations (Vite env or standard env)
+      // @ts-ignore
+      const apiKey = process.env.API_KEY || (import.meta.env && import.meta.env.VITE_API_KEY);
+      
       if (!apiKey) {
-        throw new Error("API Key não configurada.");
+        throw new Error("API Key não configurada. Configure a variável API_KEY ou VITE_API_KEY.");
       }
 
       const ai = new GoogleGenAI({ apiKey });
@@ -130,7 +141,7 @@ const SmileSimulator: React.FC = () => {
     } catch (err: any) {
       console.error(err);
       let errorMsg = "Ocorreu um erro ao conectar com a IA. Tente novamente.";
-      if (err.message && err.message.includes("API Key")) {
+      if (err.message && (err.message.includes("API Key") || err.message.includes("configured"))) {
         errorMsg = "Erro de configuração da API. Contate o administrador.";
       }
       setError(errorMsg);
