@@ -6,7 +6,6 @@ import Features from './components/Features';
 import Process from './components/Process';
 import FinalCTA from './components/FinalCTA';
 import Footer from './components/Footer';
-import SmileSimulator from './components/SmileSimulator';
 
 function App() {
   return (
@@ -14,7 +13,6 @@ function App() {
       <Hero />
       <About />
       <Gallery />
-      <SmileSimulator />
       <Features />
       <Process />
       <FinalCTA />

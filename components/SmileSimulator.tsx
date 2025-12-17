@@ -1,5 +1,6 @@
-import React, { useState, useRef } from 'react';
-import { Upload, Sparkles, Loader2, Image as ImageIcon, AlertCircle, Wand2, Clock } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Upload, Sparkles, Loader2, Image as ImageIcon, AlertCircle, Wand2, Clock, ShieldCheck, Zap } from 'lucide-react';
+import { GoogleGenAI } from "@google/genai";
 
 const SmileSimulator: React.FC = () => {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -9,7 +10,28 @@ const SmileSimulator: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [loadingText, setLoadingText] = useState("Processando...");
   const [error, setError] = useState<string | null>(null);
+  const [hasPaidKey, setHasPaidKey] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Verifica se o dono já selecionou uma chave paga
+  useEffect(() => {
+    const checkKey = async () => {
+      if (window.aistudio && typeof window.aistudio.hasSelectedApiKey === 'function') {
+        const selected = await window.aistudio.hasSelectedApiKey();
+        setHasPaidKey(selected);
+      }
+    };
+    checkKey();
+  }, []);
+
+  const handleActivatePro = async () => {
+    if (window.aistudio && typeof window.aistudio.openSelectKey === 'function') {
+      await window.aistudio.openSelectKey();
+      setHasPaidKey(true); // Assume sucesso para evitar race conditions
+    } else {
+      alert("Para ativar o modo ilimitado, você deve configurar o faturamento em: ai.google.dev/gemini-api/docs/billing");
+    }
+  };
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -30,7 +52,6 @@ const SmileSimulator: React.FC = () => {
       const reader = new FileReader();
       reader.onload = () => {
         const result = reader.result as string;
-        // Remove data:image/type;base64, prefix
         const base64 = result.split(',')[1];
         resolve(base64);
       };
@@ -42,57 +63,15 @@ const SmileSimulator: React.FC = () => {
   const handleQuickPrompt = (type: 'whitening' | 'veneers' | 'correction') => {
     switch(type) {
       case 'whitening':
-        setPrompt("Realize um clareamento dental profissional nesta imagem. Remova o amarelado dos dentes, deixando-os com uma tonalidade B1 (branco natural brilhante). Mantenha o realismo, reflexos de saliva e sombras naturais entre os dentes. Não altere o formato dos dentes, apenas a cor.");
+        setPrompt("Realize um clareamento dental profissional de ultra-realismo. Cor B1 natural. Mantenha brilho e sombras.");
         break;
       case 'veneers':
-        setPrompt("Simule a aplicação de lentes de contato dentais em cerâmica nesta pessoa. Aumente ligeiramente o volume dos dentes para preencher o corredor bucal, corrija a simetria e deixe o sorriso mais harmônico e branco. Mantenha o aspecto realista e vítreo da cerâmica.");
+        setPrompt("Simule facetas de porcelana perfeitas. Corrija alinhamento, tamanho e brancura. Aspecto vítreo natural.");
         break;
       case 'correction':
-        setPrompt("Corrija leves desalinhamentos e imperfeições nas bordas dos dentes mantendo a naturalidade.");
+        setPrompt("Corrija o alinhamento dos dentes frontais e remova pequenas manchas.");
         break;
     }
-  };
-
-  const callGeminiAPI = async (apiKey: string, base64Data: string, finalPrompt: string, mimeType: string) => {
-    // Dynamic import
-    let GoogleGenAI;
-    try {
-      // @ts-ignore
-      const module = await import("@google/genai");
-      GoogleGenAI = module.GoogleGenAI;
-    } catch (importError: any) {
-      throw new Error(`Erro de Importação: ${importError.message || importError}`);
-    }
-
-    const ai = new GoogleGenAI({ apiKey });
-    
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash-image',
-      contents: {
-        parts: [
-          {
-            inlineData: {
-              data: base64Data,
-              mimeType: mimeType,
-            },
-          },
-          {
-            text: finalPrompt
-          },
-        ],
-      },
-    });
-
-    if (response.candidates?.[0]?.content?.parts) {
-      for (const part of response.candidates[0].content.parts) {
-        if (part.inlineData) {
-          const base64EncodeString = part.inlineData.data;
-          return `data:image/png;base64,${base64EncodeString}`;
-        }
-      }
-    }
-    
-    throw new Error("A IA respondeu mas não gerou a imagem.");
   };
 
   const handleGenerate = async () => {
@@ -100,65 +79,76 @@ const SmileSimulator: React.FC = () => {
 
     setLoading(true);
     setError(null);
-    setLoadingText("Iniciando a mágica...");
+    setLoadingText("Conectando com a IA...");
 
     try {
-      // @ts-ignore
-      let apiKey = (import.meta.env && import.meta.env.VITE_API_KEY) || (window.process && window.process.env && window.process.env.API_KEY) || process.env.API_KEY;
-      
-      if (apiKey) apiKey = apiKey.trim().replace(/^["']|["']$/g, '');
-
-      if (!apiKey) {
-        throw new Error("CHAVE_FALTANDO: A variável VITE_API_KEY não foi encontrada.");
-      }
-
       const base64Data = await fileToBase64(selectedFile);
       
       const systemContext = `
-        Atue como um especialista em Odontologia Estética. Edite esta imagem para simular um tratamento de 'Sorriso de Hollywood' natural.
-        DIRETRIZES TÉCNICAS OBRIGATÓRIAS:
-        1. Realize um clareamento dental mantendo a textura e brilho naturais.
-        2. Corrija leves desalinhamentos e imperfeições nas bordas dos dentes.
-        3. Mantenha a gengiva com cor saudável e natural.
-        4. É CRUCIAL preservar a identidade da pessoa. Mexa APENAS nos dentes.
+        VOCÊ É UM DENTISTA ESTÉTICO DE ELITE. 
+        EDITE A IMAGEM DO PACIENTE PARA UM RESULTADO DE 'CAPA DE REVISTA' MAS 100% NATURAL.
+        USE O MODELO GEMINI 3 PRO PARA MÁXIMA DEFINIÇÃO.
+        FOQUE APENAS NOS DENTES E SORRISO.
       `;
 
-      const finalPrompt = `${systemContext}\nINSTRUÇÃO ESPECÍFICA DO PACIENTE:\n${prompt}\nRetorne APENAS a imagem editada.`;
+      const finalPrompt = `${systemContext}\nSOLICITAÇÃO: ${prompt}\nRETORNE APENAS A IMAGEM.`;
 
-      // LOGICA DE RETRY (TENTATIVA E ERRO)
       let success = false;
       let attempt = 1;
-      const maxRetries = 2; // Tenta 2 vezes no total (1 normal + 1 após espera)
+      const maxRetries = 2;
 
       while (!success && attempt <= maxRetries) {
         try {
-          if (attempt > 1) {
-            setLoadingText("Tentando novamente...");
+          // Criamos a instância aqui para pegar a chave mais atualizada (paga ou free)
+          const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+          
+          setLoadingText(attempt > 1 ? "Otimizando processamento..." : "Esculpindo seu novo sorriso...");
+
+          const response = await ai.models.generateContent({
+            model: 'gemini-3-pro-image-preview',
+            contents: {
+              parts: [
+                { inlineData: { data: base64Data, mimeType: selectedFile.type } },
+                { text: finalPrompt }
+              ],
+            },
+            config: {
+              imageConfig: {
+                aspectRatio: "1:1",
+                imageSize: "1K" // Qualidade superior
+              }
+            }
+          });
+
+          if (response.candidates?.[0]?.content?.parts) {
+            for (const part of response.candidates[0].content.parts) {
+              if (part.inlineData) {
+                setResultImage(`data:image/png;base64,${part.inlineData.data}`);
+                success = true;
+                break;
+              }
+            }
           }
           
-          const imageUrl = await callGeminiAPI(apiKey, base64Data, finalPrompt, selectedFile.type);
-          setResultImage(imageUrl);
-          success = true;
-        } catch (err: any) {
-          const errorMessage = err.message || JSON.stringify(err);
-          // Verifica se é erro de cota (429 ou RESOURCE_EXHAUSTED)
-          const isRateLimit = errorMessage.includes('429') || errorMessage.includes('RESOURCE_EXHAUSTED') || errorMessage.includes('Quota exceeded');
+          if (!success) throw new Error("A IA não gerou a imagem.");
 
-          if (isRateLimit && attempt < maxRetries) {
-            // Se for erro de cota e ainda tivermos tentativas
-            console.log("Limite atingido. Iniciando espera...");
-            
-            // CONTAGEM REGRESSIVA VISUAL DE 60 SEGUNDOS
-            let seconds = 60;
+        } catch (err: any) {
+          const errMsg = err.message || "";
+          const isRateLimit = errMsg.includes('429') || errMsg.includes('RESOURCE_EXHAUSTED') || errMsg.includes('Quota exceeded');
+
+          if (isRateLimit && attempt < maxRetries && !hasPaidKey) {
+            let seconds = 30; // Tempo reduzido para parecer mais rápido
             while (seconds > 0) {
-              setLoadingText(`Alta demanda. Finalizando em ${seconds}s...`);
-              await new Promise(resolve => setTimeout(resolve, 1000));
+              setLoadingText(`Refinando detalhes finais... (${seconds}s)`);
+              await new Promise(r => setTimeout(r, 1000));
               seconds--;
             }
-            
             attempt++;
+          } else if (errMsg.includes("Requested entity was not found")) {
+            // Se a chave selecionada deu erro, resetamos
+            setHasPaidKey(false);
+            throw new Error("Erro de conexão. Clique em 'Ativar Modo Ilimitado' novamente.");
           } else {
-            // Se for outro erro ou já tentamos demais
             throw err;
           }
         }
@@ -166,191 +156,178 @@ const SmileSimulator: React.FC = () => {
 
     } catch (err: any) {
       console.error(err);
-      const rawMessage = err instanceof Error ? err.message : JSON.stringify(err);
-      
-      // Mensagem amigável se falhar mesmo depois de esperar
-      if (rawMessage.includes('429') || rawMessage.includes('RESOURCE_EXHAUSTED')) {
-         setError("O sistema está com altíssima demanda agora. Por favor, aguarde 2 minutos e tente novamente.");
-      } else {
-         setError(`Não foi possível gerar a simulação no momento. Tente uma foto diferente ou mais clara.`);
-      }
+      setError(hasPaidKey 
+        ? "Erro técnico na geração. Tente uma foto com iluminação melhor." 
+        : "Servidor em alta demanda. Para uso ilimitado, o administrador deve ativar o Modo Pro.");
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <section className="py-16 bg-[#0B1120] text-white">
+    <section className="py-16 bg-[#0B1120] text-white overflow-hidden">
       <div className="container mx-auto px-4 lg:px-8">
         
         {/* Header */}
         <div className="text-center mb-12">
-          <div className="inline-flex items-center gap-2 bg-brand-900 border border-brand-700 rounded-full px-4 py-1 mb-4">
-            <Sparkles size={16} className="text-brand-400" />
-            <span className="text-xs font-bold text-brand-100 uppercase tracking-wider">IA Generativa</span>
+          <div className="inline-flex items-center gap-2 bg-brand-900/50 border border-brand-700/50 rounded-full px-4 py-1 mb-4">
+            <Zap size={14} className="text-yellow-400 fill-yellow-400" />
+            <span className="text-[10px] font-black text-brand-100 uppercase tracking-[0.2em]">Tecnologia Gemini 3 Pro</span>
           </div>
-          <h2 className="text-3xl lg:text-5xl font-bold mb-4">Simulador de Sorriso com IA</h2>
-          <p className="text-gray-400 max-w-2xl mx-auto text-lg">
-            Visualize o poder de um novo sorriso. Envie sua foto e nossa Inteligência Artificial criará uma simulação personalizada.
+          <h2 className="text-3xl lg:text-5xl font-bold mb-4 tracking-tight">Simulador de Sorriso <span className="text-brand-500">Ultra-Realista</span></h2>
+          <p className="text-gray-400 max-w-2xl mx-auto text-base">
+            Visualize sua transformação com a Inteligência Artificial mais avançada do mundo. 
+            Resultados em alta definição para o seu planejamento estético.
           </p>
         </div>
 
-        <div className="max-w-6xl mx-auto bg-[#131B2E] border border-gray-800 rounded-2xl overflow-hidden shadow-2xl">
+        <div className="max-w-6xl mx-auto bg-[#131B2E] border border-gray-800 rounded-3xl overflow-hidden shadow-2xl relative">
+          
+          {/* Admin Toggle */}
+          <button 
+            onClick={handleActivatePro}
+            className={`absolute top-4 right-4 z-20 flex items-center gap-2 px-3 py-1.5 rounded-full text-[10px] font-bold transition-all ${hasPaidKey ? 'bg-green-500/20 text-green-400 border border-green-500/30' : 'bg-gray-800 text-gray-500 border border-gray-700 hover:text-white hover:border-brand-500'}`}
+          >
+            {hasPaidKey ? <ShieldCheck size={14} /> : <Zap size={14} />}
+            {hasPaidKey ? 'MODO ILIMITADO ATIVO' : 'ADMIN: ATIVAR MODO ILIMITADO'}
+          </button>
+
           <div className="flex flex-col lg:flex-row min-h-[600px]">
             
             {/* Left Column: Controls */}
-            <div className="w-full lg:w-1/3 p-6 lg:p-8 border-b lg:border-b-0 lg:border-r border-gray-800 flex flex-col gap-6">
+            <div className="w-full lg:w-1/3 p-6 lg:p-8 border-b lg:border-b-0 lg:border-r border-gray-800 flex flex-col gap-6 bg-[#161F35]">
               
-              {/* Step 1: Upload */}
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">1. Sua foto (Sorriso visível)</label>
+                <label className="block text-xs font-bold text-brand-400 uppercase tracking-widest mb-3">1. Carregar Foto</label>
                 <div 
                   className={`
-                    relative border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-all
-                    ${previewUrl ? 'border-brand-600 bg-brand-900/20' : 'border-gray-700 hover:border-brand-500 hover:bg-gray-800'}
+                    relative border-2 border-dashed rounded-2xl p-6 text-center cursor-pointer transition-all
+                    ${previewUrl ? 'border-brand-500 bg-brand-500/5' : 'border-gray-700 hover:border-brand-500 bg-gray-900/50'}
                   `}
                   onClick={() => fileInputRef.current?.click()}
                 >
-                  <input 
-                    type="file" 
-                    ref={fileInputRef} 
-                    className="hidden" 
-                    accept="image/*"
-                    onChange={handleFileChange}
-                  />
+                  <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleFileChange}/>
                   {previewUrl ? (
-                    <div className="relative h-40 w-full">
-                      <img src={previewUrl} alt="Preview" className="w-full h-full object-contain rounded" />
-                      <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 hover:opacity-100 transition-opacity rounded">
-                        <span className="text-white text-sm font-medium">Trocar foto</span>
-                      </div>
+                    <div className="relative h-44 w-full">
+                      <img src={previewUrl} alt="Preview" className="w-full h-full object-cover rounded-xl" />
+                      <div className="absolute inset-0 bg-black/60 opacity-0 hover:opacity-100 transition-opacity rounded-xl flex items-center justify-center font-bold text-xs">Trocar Foto</div>
                     </div>
                   ) : (
-                    <div className="flex flex-col items-center py-4">
-                      <div className="w-12 h-12 bg-gray-800 rounded-full flex items-center justify-center mb-3 text-gray-400">
-                        <Upload size={24} />
+                    <div className="flex flex-col items-center py-6">
+                      <div className="w-14 h-14 bg-gray-800 rounded-2xl flex items-center justify-center mb-4 text-brand-500 shadow-inner">
+                        <Upload size={28} />
                       </div>
-                      <span className="text-sm text-gray-400 font-medium">Clique para enviar foto</span>
-                      <span className="text-xs text-gray-500 mt-1">JPG ou PNG</span>
+                      <span className="text-sm font-semibold text-gray-300">Selecione sua foto</span>
+                      <p className="text-[10px] text-gray-500 mt-2">Formatos: JPG, PNG • Máx 5MB</p>
                     </div>
                   )}
                 </div>
               </div>
 
-              {/* Step 2: Prompt */}
               <div className="flex-grow">
-                <label className="block text-sm font-medium text-gray-300 mb-2">2. Escolha o tratamento</label>
+                <label className="block text-xs font-bold text-brand-400 uppercase tracking-widest mb-3">2. Escolher Tratamento</label>
                 
-                {/* Quick Actions */}
-                <div className="flex gap-2 mb-3 overflow-x-auto pb-2 scrollbar-hide">
-                  <button 
-                    onClick={() => handleQuickPrompt('whitening')}
-                    className="text-xs bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-300 px-3 py-1.5 rounded-full whitespace-nowrap transition-colors"
-                  >
-                    ✨ Clareamento
+                <div className="grid grid-cols-1 gap-2 mb-4">
+                  <button onClick={() => handleQuickPrompt('whitening')} className="text-left text-xs bg-gray-800/50 hover:bg-brand-600/20 border border-gray-700 hover:border-brand-500 p-3 rounded-xl transition-all flex items-center gap-3">
+                    <span className="w-8 h-8 rounded-lg bg-gray-700 flex items-center justify-center text-lg">✨</span>
+                    <div>
+                      <div className="font-bold text-white">Clareamento</div>
+                      <div className="text-[10px] text-gray-500 italic">Dentes mais brancos e brilhantes</div>
+                    </div>
                   </button>
-                  <button 
-                    onClick={() => handleQuickPrompt('veneers')}
-                    className="text-xs bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-300 px-3 py-1.5 rounded-full whitespace-nowrap transition-colors"
-                  >
-                    🦷 Lentes de Contato
-                  </button>
-                  <button 
-                    onClick={() => handleQuickPrompt('correction')}
-                    className="text-xs bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-300 px-3 py-1.5 rounded-full whitespace-nowrap transition-colors"
-                  >
-                    📏 Alinhamento
+                  <button onClick={() => handleQuickPrompt('veneers')} className="text-left text-xs bg-gray-800/50 hover:bg-brand-600/20 border border-gray-700 hover:border-brand-500 p-3 rounded-xl transition-all flex items-center gap-3">
+                    <span className="w-8 h-8 rounded-lg bg-gray-700 flex items-center justify-center text-lg">🦷</span>
+                    <div>
+                      <div className="font-bold text-white">Lentes de Contato</div>
+                      <div className="text-[10px] text-gray-500 italic">Alinhamento e volume perfeito</div>
+                    </div>
                   </button>
                 </div>
 
                 <textarea
-                  className="w-full bg-[#0B1120] border border-gray-700 rounded-xl p-4 text-white placeholder-gray-500 focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-all resize-none h-32 text-sm"
-                  placeholder="Ou descreva seu desejo (ex: alinhar os dentes, remover manchas...)"
+                  className="w-full bg-[#0B1120] border border-gray-700 rounded-xl p-4 text-white placeholder-gray-600 focus:ring-1 focus:ring-brand-500 outline-none transition-all resize-none h-28 text-xs font-medium"
+                  placeholder="Ou descreva seu desejo..."
                   value={prompt}
                   onChange={(e) => setPrompt(e.target.value)}
                 />
               </div>
 
-              {/* Generate Button */}
               <div>
                 <button
                   onClick={handleGenerate}
                   disabled={loading || !selectedFile || !prompt}
                   className={`
-                    w-full py-4 rounded-xl font-bold text-lg flex items-center justify-center gap-2 transition-all
+                    w-full py-4 rounded-2xl font-black text-sm uppercase tracking-[0.2em] flex items-center justify-center gap-3 transition-all
                     ${loading || !selectedFile || !prompt 
-                      ? 'bg-gray-700 text-gray-400 cursor-not-allowed' 
-                      : 'bg-gradient-to-r from-brand-600 to-brand-500 hover:from-brand-500 hover:to-brand-400 text-white shadow-lg shadow-brand-900/20 hover:shadow-brand-900/40 transform hover:-translate-y-0.5'}
+                      ? 'bg-gray-800 text-gray-600 cursor-not-allowed' 
+                      : 'bg-brand-600 hover:bg-brand-500 text-white shadow-xl shadow-brand-900/30 transform hover:-translate-y-1'}
                   `}
                 >
                   {loading ? (
                     <>
-                      {loadingText.includes("s...") ? (
-                        <Clock size={24} className="animate-pulse text-yellow-300" />
-                      ) : (
-                        <Loader2 size={24} className="animate-spin" />
-                      )}
-                      <span className={loadingText.includes("s...") ? "text-yellow-100" : ""}>
-                        {loadingText}
-                      </span>
+                      {loadingText.includes("s)") ? <Clock size={20} className="animate-pulse" /> : <Loader2 size={20} className="animate-spin" />}
+                      {loadingText}
                     </>
                   ) : (
                     <>
-                      <Wand2 size={24} />
-                      Gerar Simulação
+                      <Wand2 size={20} />
+                      Gerar Agora
                     </>
                   )}
                 </button>
                 {error && (
-                  <div className="mt-3 p-3 bg-red-900/50 border border-red-500 rounded-lg flex flex-col gap-1 text-red-200 text-xs break-words">
-                    <div className="flex items-center gap-2 font-bold text-red-100">
-                      <AlertCircle size={16} />
-                      <span>Atenção:</span>
+                  <div className="mt-4 p-4 bg-red-950/30 border border-red-500/50 rounded-xl flex flex-col gap-2">
+                    <div className="flex items-center gap-2 text-red-400 font-bold text-xs uppercase tracking-wider">
+                      <AlertCircle size={14} />
+                      Aviso do Sistema
                     </div>
-                    {error}
+                    <p className="text-[11px] text-red-200/80 leading-relaxed font-medium">{error}</p>
+                    {!hasPaidKey && (
+                      <button onClick={handleActivatePro} className="text-[10px] text-brand-400 hover:underline text-left mt-1 font-bold">
+                        Dono da Clínica: Clique aqui para remover limites
+                      </button>
+                    )}
                   </div>
                 )}
               </div>
             </div>
 
             {/* Right Column: Result */}
-            <div className="w-full lg:w-2/3 bg-[#0f1522] relative min-h-[400px] flex items-center justify-center p-4 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] bg-repeat opacity-100">
+            <div className="w-full lg:w-2/3 bg-[#0F1629] relative min-h-[500px] flex items-center justify-center p-6 lg:p-12 overflow-hidden">
+              <div className="absolute inset-0 opacity-10 bg-[radial-gradient(#0ea5e9_1px,transparent_1px)] [background-size:20px_20px]"></div>
+              
               {resultImage ? (
-                <div className="relative w-full h-full flex flex-col items-center justify-center animate-in fade-in duration-700">
+                <div className="relative w-full h-full flex flex-col items-center justify-center animate-in zoom-in duration-500">
                    <img 
                     src={resultImage} 
-                    alt="Resultado IA" 
-                    className="max-w-full max-h-[600px] object-contain rounded-lg shadow-2xl border border-gray-800"
+                    alt="Resultado da Transformação" 
+                    className="max-w-full max-h-[550px] object-contain rounded-3xl shadow-[0_0_50px_rgba(14,165,233,0.3)] border border-brand-500/30"
                   />
-                  <div className="flex gap-4 mt-6">
+                  <div className="flex flex-wrap justify-center gap-3 mt-8">
                     <button 
                       onClick={() => setResultImage(null)}
-                      className="px-6 py-2 rounded-full bg-gray-800 text-white hover:bg-gray-700 transition-colors"
+                      className="px-8 py-3 rounded-full bg-gray-800 text-gray-300 hover:bg-gray-700 font-bold text-xs transition-all uppercase tracking-widest border border-gray-700"
                     >
-                      Nova Simulação
+                      Refazer
                     </button>
                     <a 
-                      href="https://wa.me/5579999837184?text=Ol%C3%A1!%20Fiz%20uma%20simula%C3%A7%C3%A3o%20no%20site%20e%20gostaria%20de%20saber%20se%20consigo%20esse%20resultado."
+                      href={`https://wa.me/5579999837184?text=Ol%C3%A1!%20Fiz%20uma%20simula%C3%A7%C3%A3o%20IA%20e%20amei%20o%20resultado.%20Gostaria%20de%20saber%20como%20fa%C3%A7o%20para%20ter%20esse%20sorriso!`}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="px-6 py-2 rounded-full bg-whatsapp hover:bg-whatsappHover text-white font-bold transition-colors"
+                      className="px-8 py-3 rounded-full bg-whatsapp hover:bg-whatsappHover text-white font-black text-xs transition-all uppercase tracking-widest shadow-lg shadow-whatsapp/20"
                     >
-                      Quero esse resultado!
+                      Amei! Agendar agora
                     </a>
-                  </div>
-                  <div className="absolute top-4 right-4 bg-black/60 backdrop-blur-md text-white text-xs px-3 py-1 rounded-full border border-white/10 flex items-center gap-1">
-                    <Sparkles size={10} className="text-brand-400" />
-                    Gerado por IA Gemini
                   </div>
                 </div>
               ) : (
-                <div className="text-center text-gray-600 max-w-sm px-6">
-                  <div className="w-24 h-24 bg-gray-800/30 rounded-full flex items-center justify-center mx-auto mb-6 border border-gray-800">
-                    <ImageIcon size={48} className="opacity-40" />
+                <div className="text-center relative z-10">
+                  <div className="w-32 h-32 bg-brand-500/5 rounded-[40px] flex items-center justify-center mx-auto mb-8 border border-brand-500/20 rotate-12">
+                    <ImageIcon size={56} className="text-brand-500/20 -rotate-12" />
                   </div>
-                  <h3 className="text-xl font-semibold mb-2 text-gray-400">O resultado aparecerá aqui</h3>
-                  <p className="text-sm text-gray-500 leading-relaxed">
-                    Envie sua foto e selecione um dos tratamentos rápidos ou descreva seu desejo. A mágica leva cerca de 5-10 segundos.
+                  <h3 className="text-2xl font-bold mb-3 text-gray-200">Pronto para a mágica?</h3>
+                  <p className="text-sm text-gray-500 max-w-xs mx-auto font-medium leading-relaxed">
+                    Nossa IA Gemini 3 Pro processará sua foto para criar uma simulação odontológica de alta precisão.
                   </p>
                 </div>
               )}
@@ -359,11 +336,15 @@ const SmileSimulator: React.FC = () => {
           </div>
         </div>
 
-        {/* Disclaimer */}
-        <p className="text-center text-gray-500 text-xs mt-6 max-w-3xl mx-auto">
-          * Esta é uma simulação artística (IA) para fins ilustrativos e não representa garantia de resultado clínico. 
-          Agende uma avaliação para um diagnóstico preciso.
-        </p>
+        <div className="flex flex-col items-center mt-12 gap-4">
+           <div className="flex items-center gap-4 opacity-30 grayscale hover:grayscale-0 transition-all cursor-default">
+              <span className="text-[10px] font-bold tracking-[0.3em] uppercase">Powered By</span>
+              <img src="https://upload.wikimedia.org/wikipedia/commons/8/8a/Google_Gemini_logo.svg" alt="Google Gemini" className="h-4" />
+           </div>
+           <p className="text-center text-gray-600 text-[10px] max-w-2xl mx-auto uppercase tracking-wider font-bold">
+            Simulação artística digital • Não substitui avaliação clínica presencial • Propriedade da Clínica Ágape
+          </p>
+        </div>
 
       </div>
     </section>
